@@ -10,7 +10,22 @@
 #define SafeDeleteDC(DC) __pragma(warning(disable:6387)) if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } __pragma(warning(default:6387))
 #define SafeDeleteObject(Obj) __pragma(warning(disable:6387)) if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } __pragma(warning(default:6387))
 
-
+// TODO: 
+// 1. Fix all lines with TODO next to them 
+// 2. add aa using ms algo 
+//     2a. Create original bitmap for drawing
+//     2b. Create temporary bitmap (2x, 4x or 8x) larger than the original bitmap
+//     2c. Render your graphics to this large temporary bitmap 
+//        (use any GDI method, pen or brush you like) 
+//        but scale the graphics appropriately
+//     2d. Draw this temporary bitmap on the original bitmap scaled 
+//        (i.e. using StretchDIBits() method or any other you like), 
+//        but call SetStretchBltMode(HALFTONE)
+//        before this last step for the original DC 
+//        (which holds the original bitmap), and after scaling restore it back
+// 3. Maybe add shared pointer like structure to brush and pen class
+//      
+//
 
 class BrushPP
 {
@@ -155,7 +170,6 @@ private:
 class PenPP
 {
 public:
-
     PenPP()
     {
         if(NeedsDestroyed)
@@ -263,6 +277,7 @@ public:
 private:
     HPEN Pen{};
     bool NeedsDestroyed = false;
+    int RefCount = 0;
 };
 
 class GdiPP
@@ -271,6 +286,11 @@ public:
     static void LogError(std::string ErrorMsg)
     {
         std::cout << ErrorMsg << std::endl;
+    }
+
+    GdiPP() // Default Ctor
+    {
+        this->~GdiPP();
     }
 
     GdiPP(const HWND& Wnd, const bool IsDoubleBuffered = false) // ctor
@@ -311,9 +331,9 @@ public:
 
     ~GdiPP() // dtor 
     {
-        SelectObject(MemDC, OldBM);
-        SelectObject(MemDC, OldPen);
-        SelectObject(MemDC, OldBrush);
+        SelectObject(MemDC, OldBM); // i dont think this line is needed TODO
+        SelectObject(MemDC, OldPen); // i dont think this line is needed TODO
+        SelectObject(MemDC, OldBrush); // i dont think this line is needed TODO
         SafeDeleteObject(MemBM);
         SafeDeleteObject(OldBM);
         SafeDeleteObject(OldPen);
@@ -330,12 +350,12 @@ public:
             {
                 if(OldPen)
                 {
-                    SelectObject(ScreenDC, NewPen);
+                    OldPen = (HPEN)SelectObject(ScreenDC, NewPen); // i think this should always be getting set TODO
                 }
 
                 else
                 {
-                    OldPen = (HPEN)SelectObject(ScreenDC, NewPen);
+                    OldPen = (HPEN)SelectObject(ScreenDC, NewPen); // i think this should always be getting set TODO
                 }
 
                 if(!OldPen)
@@ -351,12 +371,12 @@ public:
             {
                 if(OldPen)
                 {
-                    SelectObject(MemDC, NewPen);
+                    OldPen = (HPEN)SelectObject(MemDC, NewPen); // i think this should always be getting set TODO
                 }
 
                 else
                 {
-                    OldPen = (HPEN)SelectObject(MemDC, NewPen);
+                    OldPen = (HPEN)SelectObject(MemDC, NewPen); // i think this should always be getting set TODO
                 }
 
                 if(!OldPen)
@@ -378,11 +398,11 @@ public:
             {
                 if(OldBrush)
                 {
-                    SelectObject(ScreenDC, NewBrush);
+                    OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush); // i think this should always be getting set TODO
                 }
                 else
                 {
-                    OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush);
+                    OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush); // i think this should always be getting set TODO
                 }
 
                 if(!OldBrush)
@@ -398,11 +418,11 @@ public:
             {
                 if(OldBrush)
                 {
-                    SelectObject(MemDC, NewBrush);
+                    OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush); // i think this should always be getting set TODO
                 }
                 else
                 {
-                    OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush);
+                    OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush); // i think this should always be getting set TODO
                 }
 
                 if(!OldBrush)
@@ -415,7 +435,8 @@ public:
         return true;
     }
 
-    bool DrawRectangle(const int X, const int Y, const int Width, const int Height)
+    //Unfilled Shapes
+    const bool DrawRectangle(const int X, const int Y, const int Width, const int Height)
     {
         if(!DoubleBuffered)
         {
@@ -433,7 +454,37 @@ public:
         }
     }
 
-    bool DrawStringA(const int X, const int Y, const std::string Text, const COLORREF TextColor, const int BkMode)
+    const bool DrawRectangle(const int X, const int Y, const int Width, const int Height, HPEN Line)
+    {
+        bool Status = false;
+
+        this->ChangePen(Line);
+
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            Status = Rectangle(ScreenDC, X, Y, X + Width, Y + Height);
+
+            this->ChangePen(this->OldPen);
+
+            return Status;
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            Status = Rectangle(MemDC, X, Y, X + Width, Y + Height);
+
+            this->ChangePen(this->OldPen);
+
+            return Status;
+        }
+    }
+
+    const bool DrawStringA(const int X, const int Y, const std::string Text, const COLORREF TextColor, const int BkMode)
     {
         if(!DoubleBuffered)
         {
@@ -471,7 +522,7 @@ public:
         }
     }
 
-    bool DrawStringW(const int X, const int Y, const std::wstring Text, const COLORREF TextColor, const int BkMode)
+    const bool DrawStringW(const int X, const int Y, const std::wstring Text, const COLORREF TextColor, const int BkMode)
     {
         if (!DoubleBuffered)
         {
@@ -509,7 +560,7 @@ public:
         }
     }
 
-    bool DrawLine(const int StartX, const int StartY, const int EndX, const int EndY)
+    const bool DrawLine(const int StartX, const int StartY, const int EndX, const int EndY)
     {
         bool Status = false;
         if(!DoubleBuffered)
@@ -546,7 +597,49 @@ public:
         }
     }
 
-    bool DrawEllipse(const int X, const int Y, const int Width, const int Height)
+    const bool DrawLine(const int StartX, const int StartY, const int EndX, const int EndY, HPEN Line)
+    {
+        bool Status = false;
+
+        this->ChangePen(Line);
+
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            POINT OldPos;
+            Status = MoveToEx(ScreenDC, StartX, StartY, &OldPos);
+            Status = LineTo(ScreenDC, EndX, EndY);
+            Status = MoveToEx(ScreenDC, OldPos.x, OldPos.y, nullptr);
+            if (!Status)
+            {
+                ErrorHandler("[GdiPP]  Failed to DrawLine");
+                return false;
+            }
+            this->ChangePen(this->OldPen);
+            return Status;
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            POINT OldPos;
+            Status = MoveToEx(MemDC, StartX, StartY, &OldPos);
+            Status = LineTo(MemDC, EndX, EndY);
+            Status = MoveToEx(MemDC, OldPos.x, OldPos.y, nullptr);
+            if (!Status)
+            {
+                ErrorHandler("[GdiPP]  Failed to DrawLine");
+                return false;
+            }
+            this->ChangePen(this->OldPen);
+            return Status;
+        }
+    }
+
+    const bool DrawEllipse(const int X, const int Y, const int Width, const int Height)
     {
         if(!DoubleBuffered)
         {
@@ -563,11 +656,304 @@ public:
         }
     }
 
+    const bool DrawEllipse(const int X, const int Y, const int Width, const int Height, HPEN Line)
+    {
+        bool Status = false;
+
+        this->ChangePen(Line);
+
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            Status = Ellipse(ScreenDC, X, Y, X + Width, Y + Height);
+
+            this->ChangePen(this->OldPen);
+
+            return Status;
+        }
+        else
+        {
+            if (!ScreenDC)
+                return false;
+
+            Status = Ellipse(MemDC, X, Y, X + Width, Y + Height);
+
+            this->ChangePen(this->OldPen);
+
+            return Status;
+        }
+    }
+
+    const bool DrawTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3)
+    {
+        bool Status = false;
+
+        Status = DrawLine(X1, Y1, X2, Y2);
+        Status = DrawLine(X2, Y2, X3, Y3);
+        Status = DrawLine(X3, Y3, X1, Y1);
+
+        return Status;
+    }
+
+    const bool DrawTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HPEN Line)
+    {
+        bool Status = false;
+
+        this->ChangePen(Line);
+
+        Status = DrawLine(X1, Y1, X2, Y2);
+        Status = DrawLine(X2, Y2, X3, Y3);
+        Status = DrawLine(X3, Y3, X1, Y1);
+
+        this->ChangePen(this->OldPen);
+
+        return Status;
+    }
+
+    // Filled Shapes
+    // Note: It is the responsibility of the caller to free the brush 
+    const bool DrawFilledRect(const int X, const int Y, const int Width, const int Height, HBRUSH BG, HPEN OutLine = (HPEN)INVALID_HANDLE_VALUE)
+    {
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            RECT r = {};
+
+            SetRect(&r, X, Y, X + Width, Y + Height);
+
+            return FillRect(ScreenDC, &r, BG);
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            RECT r = {};
+
+            SetRect(&r, X, Y, X + Width, Y + Height);
+
+            return FillRect(MemDC, &r, BG);
+        }
+    }
+
+    const bool DrawFilledRect(const int X, const int Y, const int Width, const int Height)
+    {
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            // Top Left, Bottom Left, Bottom Right, Top Right
+            POINT Verts[4] = { {X, Y}, {X, Y + Height}, {X+Width, Y+Height}, {X + Width, Y} };
+
+            return Polygon(ScreenDC, Verts, 4);
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            POINT Verts[4] = { {X, Y}, {X, Y + Height}, {X + Width, Y + Height}, {X + Width, Y} };
+
+            return Polygon(MemDC, Verts, 4);
+        }
+    }
+
+    const bool DrawFilledRect(const int X, const int Y, const int Width, const int Height, HPEN OutLine, HBRUSH BG = (HBRUSH)INVALID_HANDLE_VALUE)
+    {
+        bool Result = false;
+
+        if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            this->ChangeBrush(BG);
+
+        this->ChangePen(OutLine);
+
+        if (!DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            // Top Left, Bottom Left, Bottom Right, Top Right
+            POINT Verts[4] = { {X, Y}, {X, Y + Height}, {X + Width, Y + Height}, {X + Width, Y} };
+
+            Result = Polygon(ScreenDC, Verts, 4);
+
+            this->ChangePen(this->OldPen);
+            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            {
+                this->ChangeBrush(this->OldBrush);
+            }
+
+            return Result;
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            POINT Verts[4] = { {X, Y}, {X, Y + Height}, {X + Width, Y + Height}, {X + Width, Y} };
+
+            Result =  Polygon(MemDC, Verts, 4);
+
+            this->ChangePen(this->OldPen);
+            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            {
+                this->ChangeBrush(this->OldBrush);
+            }
+
+            return Result;
+        }
+    }
+
+    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HPEN OutLine, HBRUSH BG = (HBRUSH)INVALID_HANDLE_VALUE)
+    {
+        bool Result = false;
+
+        POINT Verts[3];
+        Verts[0] = { X1, Y1 };
+        Verts[1] = { X2, Y2 };
+        Verts[2] = { X3, Y3 };
+
+        if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            this->ChangeBrush(BG);
+
+        this->ChangePen(OutLine);
+
+        if (!this->DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+
+            Result = Polygon(ScreenDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+
+            this->ChangePen(this->OldPen);
+            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            {
+                this->ChangeBrush(this->OldBrush);
+            }
+
+            return Result;
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            Result = Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+
+            this->ChangePen(this->OldPen);
+            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
+            {
+                this->ChangeBrush(this->OldBrush);
+            }
+
+            return Result;
+        }
+    }
+
+    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HBRUSH Bg, HPEN OutLine = (HPEN)INVALID_HANDLE_VALUE)
+    {
+        bool Result = false;
+
+        if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
+        {
+            this->ChangePen(OutLine);
+        }
+
+        this->ChangeBrush(Bg);
+
+        POINT Verts[3];
+        Verts[0] = { X1, Y1 };
+        Verts[1] = { X2, Y2 };
+        Verts[2] = { X3, Y3 };
+
+        if (!this->DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            Result = Polygon(ScreenDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+
+            this->ChangeBrush(this->OldBrush);
+            if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
+            {
+                this->ChangePen(this->OldPen);
+            }
+
+            return Result;
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            Result = Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+
+            this->ChangeBrush(this->OldBrush);
+            if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
+            {
+                this->ChangePen(this->OldPen);
+            }
+            
+            return Result;
+        }
+    }
+
+    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3)
+    {
+        POINT Verts[3];
+        Verts[0] = { X1, Y1 };
+        Verts[1] = { X2, Y2 };
+        Verts[2] = { X3, Y3 };
+
+        if (!this->DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            return Polygon(ScreenDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            return Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+        }
+    }
+
+
+    // Draws a polygon using the vertices
+    // Vertices (In): Specifys the vertices to be used  
+    // Returns true if successful
+    const bool DrawPolygon(POINT Vertices[])
+    {
+        if (!this->DoubleBuffered)
+        {
+            if (!ScreenDC)
+                return false;
+
+            return Polygon(ScreenDC, Vertices, sizeof(Vertices) / sizeof(Vertices[0]));
+        }
+        else
+        {
+            if (!MemDC)
+                return false;
+
+            return Polygon(MemDC, Vertices, sizeof(Vertices) / sizeof(Vertices[0]));
+        }
+    }
+
     // Draws any content in the double biffer
     // DoTransparentBlt (in, optional): Preforms a transparent blt  
     // TransColor (in, optional): Specifys color to make transparent in the transparent blt
     // ROP (in, optional): Specifys copy mode to use in the blt call
-    bool DrawDoubleBuffer(const bool DoTransparentBlt = false, const COLORREF TransColor = RGB(0, 0, 0), const DWORD ROP = SRCCOPY)
+    const bool DrawDoubleBuffer(const bool DoTransparentBlt = false, const COLORREF TransColor = RGB(0, 0, 0), const DWORD ROP = SRCCOPY)
     {
         if(!DoTransparentBlt)
         {

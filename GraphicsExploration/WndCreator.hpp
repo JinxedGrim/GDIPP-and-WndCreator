@@ -56,6 +56,21 @@ LRESULT CALLBACK WindowProcW(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 class WndCreatorA
 {
 public:
+    WndCreatorA()
+    {
+        if (!DidCreate)
+        {
+            wc = {};
+            DidCreate = false;
+            Wnd = NULL;
+            ErrorHandler = LogError;
+        }
+        else
+        {
+            this->~WndCreatorA();
+        }
+    }
+
     WndCreatorA(const UINT ClassStyle, const HINSTANCE hInstance, const std::string ClassName, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcA)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXA));
@@ -345,6 +360,19 @@ public:
         return true;
     }
 
+    const POINT GetWindowSz()
+    {
+        RECT rect;
+        if (GetWindowRect(this->Wnd, &rect))
+        {
+            return{ rect.right - rect.left, rect.bottom - rect.top };
+        }
+        else
+        {
+            return {0, 0};
+        }
+    }
+
     const bool SetWndSz(const HWND WndZPos, const int X, int const Y, const int Width, const int Height, const UINT SwFlags)
     {
         if (!this->Wnd)
@@ -399,6 +427,21 @@ public:
 class WndCreatorW
 {
 public:
+    WndCreatorW()
+    {
+        if (!DidCreate)
+        {
+            wc = {};
+            DidCreate = false;
+            Wnd = NULL;
+            ErrorHandler = LogError;
+        }
+        else
+        {
+            this->~WndCreatorW();
+        }
+    }
+
     WndCreatorW(const UINT ClassStyle, const HINSTANCE hInstance, const std::wstring ClassName, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcW)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXW));
@@ -686,6 +729,19 @@ public:
         return true;
     }
 
+    const POINT GetWindowSz()
+    {
+        RECT rect;
+        if (GetWindowRect(this->Wnd, &rect))
+        {
+            return{ rect.right - rect.left, rect.bottom - rect.top };
+        }
+        else
+        {
+            return { 0, 0 };
+        }
+    }
+
     const bool SetWndSz(const HWND WndZPos, const int X, const int Y, const int Width, const int Height, const UINT SwFlags)
     {
         if (!this->Wnd)
@@ -736,4 +792,3 @@ public:
         SafeDestroyWindow(this->Wnd);
     }
 };
-
