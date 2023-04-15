@@ -12,6 +12,19 @@
 #define WndCreator WndCreatorA
 #endif // UNICODE
 
+enum WndExModes : DWORD 
+{
+    FullScreenEx = WS_EX_TOPMOST,
+    BorderLessEx = 0,
+    WindowedEx = 0
+};
+
+enum WndModes : DWORD
+{
+    FullScreen = WS_POPUP | WS_VISIBLE,
+    BorderLess = WS_POPUP | WS_VISIBLE,
+    Windowed = WS_OVERLAPPED | WS_VISIBLE
+};
 
 LRESULT CALLBACK WindowProcA(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -39,14 +52,17 @@ LRESULT CALLBACK WindowProcW(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         case WM_DESTROY: // called when DestroyWindow is called
         {
+            PostQuitMessage(0);
             break; // calls DefWindowProcW: which will call WM_QUIT
         }
         case WM_CLOSE: // called when user clicks x button or alt f4
         {
+            PostQuitMessage(0);
             break; // calls DefWindowProcW: which will call Destroy Window 
         }
         case WM_QUIT: // closes window
         {
+            PostQuitMessage(0);
             break;
         }
     }
@@ -71,10 +87,10 @@ public:
         }
     }
 
-    WndCreatorA(const UINT ClassStyle, const HINSTANCE hInstance, const std::string ClassName, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcA)
+    WndCreatorA(const UINT ClassStyle, const HINSTANCE hInstance, const std::string ClassName, const HCURSOR Curs, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcA)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXA));
-        wc = { sizeof(WNDCLASSEXA), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, NULL, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
+        wc = { sizeof(WNDCLASSEXA), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, Curs, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
 
         if (!RegisterClassExA(&wc))
         {
@@ -442,10 +458,11 @@ public:
         }
     }
 
-    WndCreatorW(const UINT ClassStyle, const HINSTANCE hInstance, const std::wstring ClassName, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcW)
+    WndCreatorW(const UINT ClassStyle, const HINSTANCE hInstance, const std::wstring ClassName, const HCURSOR Curs, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcW)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXW));
-        wc = { sizeof(WNDCLASSEXW), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, NULL, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
+
+        wc = { sizeof(WNDCLASSEXW), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, Curs, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
 
         if (!RegisterClassExW(&wc))
         {

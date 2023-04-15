@@ -21,7 +21,7 @@ int main()
     HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH);
 
     // Create Overlay
-    WndCreator Window = WndCreator(CS_CLASSDC, GetModuleHandle(NULL), L"Mouse ESP", ClearBrush, WS_EX_LAYERED | WS_EX_TOPMOST, WS_POPUP | WS_VISIBLE, 0, 0, sx, sy);
+    WndCreator Window = WndCreator(CS_CLASSDC, GetModuleHandle(NULL), L"Mouse ESP", LoadCursorW(NULL, IDC_ARROW), ClearBrush, WS_EX_LAYERED | WS_EX_TOPMOST, WS_POPUP | WS_VISIBLE, 0, 0, sx, sy);
 
     Window.SetLayeredAttributes(RGB(0, 0, 0), 0, LWA_COLORKEY);
 

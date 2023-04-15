@@ -27,6 +27,7 @@
 //      
 //
 
+
 class BrushPP
 {
 public:
@@ -48,10 +49,7 @@ public:
     {
         if(NeedsDestroyed == true)
         {
-            if(Brush != NULL)
-            {
-              DeleteObject(Brush);
-            }
+            SafeDeleteObject(Brush);
         }
         if(HBrush != NULL)
         {
@@ -274,6 +272,7 @@ public:
         }
         return *this;
     }
+
 private:
     HPEN Pen{};
     bool NeedsDestroyed = false;
@@ -342,21 +341,21 @@ public:
         SafeReleaseDC(Wnd, ScreenDC);
     }
 
-    bool ChangePen(const HPEN NewPen) 
+    bool ChangePen(const HPEN NewPen)
     {
         if(!DoubleBuffered)
         {
             if(ScreenDC)
             {
-                if(OldPen)
-                {
+                //if(OldPen)
+                //{
                     OldPen = (HPEN)SelectObject(ScreenDC, NewPen); // i think this should always be getting set TODO
-                }
+                //}
 
-                else
-                {
-                    OldPen = (HPEN)SelectObject(ScreenDC, NewPen); // i think this should always be getting set TODO
-                }
+                //else
+                //{
+                //    OldPen = (HPEN)SelectObject(ScreenDC, NewPen); // i think this should always be getting set TODO
+                //}
 
                 if(!OldPen)
                 {
@@ -369,15 +368,15 @@ public:
         {
             if(MemDC)
             {
-                if(OldPen)
-                {
+                //if(OldPen)
+                //{
                     OldPen = (HPEN)SelectObject(MemDC, NewPen); // i think this should always be getting set TODO
-                }
+                //}
 
-                else
-                {
-                    OldPen = (HPEN)SelectObject(MemDC, NewPen); // i think this should always be getting set TODO
-                }
+                //else
+                //{
+                //    OldPen = (HPEN)SelectObject(MemDC, NewPen); // i think this should always be getting set TODO
+                //}
 
                 if(!OldPen)
                 {
@@ -396,18 +395,18 @@ public:
         {
             if(ScreenDC)
             {
-                if(OldBrush)
-                {
+                //if(OldBrush)
+                //{
                     OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush); // i think this should always be getting set TODO
-                }
-                else
-                {
-                    OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush); // i think this should always be getting set TODO
-                }
+                //}
+                //else
+                //{
+                //    OldBrush = (HBRUSH)SelectObject(ScreenDC, NewBrush); // i think this should always be getting set TODO
+                //}
 
                 if(!OldBrush)
                 {
-                    ErrorHandler("[GdiPP]  Error vreating solid brush");
+                    ErrorHandler("[GdiPP]  Error creating solid brush");
                     return false;
                 }
             }
@@ -416,14 +415,14 @@ public:
         {
             if(MemDC)
             {
-                if(OldBrush)
-                {
+                //if(OldBrush)
+                //{
                     OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush); // i think this should always be getting set TODO
-                }
-                else
-                {
-                    OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush); // i think this should always be getting set TODO
-                }
+                //}
+                //else
+                //{
+                //    OldBrush = (HBRUSH)SelectObject(MemDC, NewBrush); // i think this should always be getting set TODO
+                //}
 
                 if(!OldBrush)
                 {
@@ -433,6 +432,50 @@ public:
             }
         }
         return true;
+    }
+
+    bool ChangeBitmap(const HBITMAP NewBitMap)
+    {
+        if (!DoubleBuffered)
+        {
+            if (ScreenDC)
+            {
+                //if(OldBrush)
+                //{
+                    OldBM = (HBITMAP)SelectObject(ScreenDC, NewBitMap); // i think this should always be getting set TODO
+                //}
+                //else
+                //{
+                //    OldBM = (HBITMAP)SelectObject(ScreenDC, NewBitMap); // i think this should always be getting set TODO
+                //}
+
+                if (!OldBM)
+                {
+                    ErrorHandler("[GdiPP]  Error creating solid brush");
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            if (MemDC)
+            {
+                //if(OldBrush)
+                //{
+                    OldBM = (HBITMAP)SelectObject(MemDC, NewBitMap); // i think this should always be getting set TODO
+                //}
+                //else
+                //{
+                //    OldBM = (HBITMAP)SelectObject(ScreenDC, NewBitMap); // i think this should always be getting set TODO
+                //}
+
+                if (!OldBM)
+                {
+                    ErrorHandler("[GdiPP]  Error creating solid brush");
+                    return false;
+                }
+            }
+        }
     }
 
     //Unfilled Shapes
@@ -484,7 +527,7 @@ public:
         }
     }
 
-    const bool DrawStringA(const int X, const int Y, const std::string Text, const COLORREF TextColor, const int BkMode)
+    const bool DrawStringA(const int X, const int Y, const std::string &Text, const COLORREF TextColor, const int BkMode)
     {
         if(!DoubleBuffered)
         {
@@ -501,6 +544,7 @@ public:
                 ErrorHandler("[GdiPP]  Failed to set text color");
                 return false;
             }
+
             return TextOutA(ScreenDC, X, Y, Text.c_str(), (int)Text.length());
         }
         else
@@ -522,7 +566,7 @@ public:
         }
     }
 
-    const bool DrawStringW(const int X, const int Y, const std::wstring Text, const COLORREF TextColor, const int BkMode)
+    const bool DrawStringW(const int X, const int Y, const std::wstring &Text, const COLORREF TextColor, const int BkMode)
     {
         if (!DoubleBuffered)
         {
@@ -809,101 +853,53 @@ public:
         }
     }
 
-    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HPEN OutLine, HBRUSH BG = (HBRUSH)INVALID_HANDLE_VALUE)
+    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HBRUSH BG = nullptr, HPEN OutLine = nullptr)
     {
         bool Result = false;
 
-        POINT Verts[3];
-        Verts[0] = { X1, Y1 };
-        Verts[1] = { X2, Y2 };
-        Verts[2] = { X3, Y3 };
-
-        if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
-            this->ChangeBrush(BG);
-
-        this->ChangePen(OutLine);
-
-        if (!this->DoubleBuffered)
-        {
-            if (!ScreenDC)
-                return false;
-
-
-            Result = Polygon(ScreenDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
-
-            this->ChangePen(this->OldPen);
-            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
-            {
-                this->ChangeBrush(this->OldBrush);
-            }
-
-            return Result;
-        }
-        else
-        {
-            if (!MemDC)
-                return false;
-
-            Result = Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
-
-            this->ChangePen(this->OldPen);
-            if (BG != (HBRUSH)INVALID_HANDLE_VALUE)
-            {
-                this->ChangeBrush(this->OldBrush);
-            }
-
-            return Result;
-        }
-    }
-
-    const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3, HBRUSH Bg, HPEN OutLine = (HPEN)INVALID_HANDLE_VALUE)
-    {
-        bool Result = false;
-
-        if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
+        if (OutLine != nullptr && OutLine != INVALID_HANDLE_VALUE)
         {
             this->ChangePen(OutLine);
         }
 
-        this->ChangeBrush(Bg);
-
-        POINT Verts[3];
-        Verts[0] = { X1, Y1 };
-        Verts[1] = { X2, Y2 };
-        Verts[2] = { X3, Y3 };
+        if (BG != nullptr && BG != INVALID_HANDLE_VALUE)
+        {
+            this->ChangeBrush(BG);
+        }
 
         if (!this->DoubleBuffered)
         {
             if (!ScreenDC)
                 return false;
 
-            Result = Polygon(ScreenDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+            POINT Verts[3] = { {X1, Y1}, {X2, Y2}, {X3, Y3} };
 
-            this->ChangeBrush(this->OldBrush);
-            if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
-            {
-                this->ChangePen(this->OldPen);
-            }
-
-            return Result;
+            Result = Polygon(ScreenDC, Verts, 3);
         }
         else
         {
             if (!MemDC)
                 return false;
 
-            Result = Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
+            POINT Verts[3] = { {X1, Y1}, {X2, Y2}, {X3, Y3} };
 
-            this->ChangeBrush(this->OldBrush);
-            if (OutLine != (HPEN)INVALID_HANDLE_VALUE)
-            {
-                this->ChangePen(this->OldPen);
-            }
-            
-            return Result;
+            Result = Polygon(MemDC, Verts, 3);
         }
+
+        if (OutLine != nullptr)
+        {
+            this->ChangePen(this->OldPen);
+        }
+
+        if (BG != nullptr)
+        {
+            this->ChangeBrush(this->OldBrush);
+        }
+
+        return Result;
     }
 
+    /*
     const bool DrawFilledTriangle(const int X1, const int Y1, const int X2, const int Y2, const int X3, const int Y3)
     {
         POINT Verts[3];
@@ -926,26 +922,26 @@ public:
             return Polygon(MemDC, Verts, sizeof(Verts) / sizeof(Verts[0]));
         }
     }
-
+    */
 
     // Draws a polygon using the vertices
     // Vertices (In): Specifys the vertices to be used  
     // Returns true if successful
-    const bool DrawPolygon(POINT Vertices[])
+    const bool DrawPolygon(POINT Vertices[], int Count)
     {
         if (!this->DoubleBuffered)
         {
             if (!ScreenDC)
                 return false;
 
-            return Polygon(ScreenDC, Vertices, sizeof(Vertices) / sizeof(Vertices[0]));
+            return Polygon(ScreenDC, Vertices, Count);
         }
         else
         {
             if (!MemDC)
                 return false;
 
-            return Polygon(MemDC, Vertices, sizeof(Vertices) / sizeof(Vertices[0]));
+            return Polygon(MemDC, Vertices, Count);
         }
     }
 
@@ -957,6 +953,8 @@ public:
     {
         if(!DoTransparentBlt)
         {
+            GetClientRect(this->Wnd, &ClientRect);
+
             if(!BitBlt(ScreenDC, 0, 0, ClientRect.right - ClientRect.left, ClientRect.bottom - ClientRect.top, MemDC, 0, 0, ROP))
             {
                 ErrorHandler("[GdiPP]  Failed to BitBlt");
@@ -967,6 +965,7 @@ public:
         else
         {
 #ifndef NoDepends
+            GetClientRect(this->Wnd, &ClientRect);
             if(!TransparentBlt(ScreenDC, 0, 0, ClientRect.right - ClientRect.left, ClientRect.bottom - ClientRect.top, MemDC, 0, 0, ClientRect.right - ClientRect.left, ClientRect.bottom - ClientRect.top, RGB(0, 0, 0)))
             {
                 ErrorHandler("[GdiPP]  Failed to TransparentBlt");
@@ -989,6 +988,8 @@ public:
         {
             if(ClearBrush)
             {
+                GetClientRect(this->Wnd, &ClientRect);
+
                 if(!DoubleBuffered)
                     FillRect(ScreenDC, &ClientRect, ClearBrush);
                 else
@@ -1006,6 +1007,11 @@ public:
         }
     }
 
+    bool UpdateClientRgn()
+    {
+        return GetClientRect(Wnd, &this->ClientRect);
+    }
+
     HWND Wnd = NULL;
     HDC ScreenDC = NULL;
     RECT ClientRect = {};
@@ -1013,7 +1019,6 @@ public:
     HBITMAP MemBM = NULL;
     HBITMAP OldBM = NULL;
     void(*ErrorHandler)(std::string) = LogError;
-    
 private:
     HPEN OldPen = NULL;
     HBRUSH OldBrush = NULL;
