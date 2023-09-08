@@ -25,6 +25,42 @@
 //        before this last step for the original DC 
 //        (which holds the original bitmap), and after scaling restore it back
 
+COLORREF GetBrushColor(HBRUSH brush)
+{
+    LOGBRUSH lbr;
+    if (GetObject(brush, sizeof(lbr), &lbr) != sizeof(lbr)) {
+        // Not even a brush!
+        return RGB(0, 0, 0);
+    }
+    if (lbr.lbStyle != BS_SOLID) {
+        // Not a solid color brush.
+        return RGB(0, 0, 0);
+    }
+    return lbr.lbColor;
+}
+
+void MergePixelBuffers(PBYTE Output, PBYTE Input, const int Width, const int Height, COLORREF IgnoreColor)
+{
+    for (int Y = 0; Y < Height; Y++)
+    {
+        for (int X = 0; X < Width; X++)
+        {
+            // BGR format for some reason 
+            int index = (X + Width * Y) * 3;
+
+            // Check pixel buffer if its color != IgnoreColor copy to final out buffer
+
+            if (Output[index + 0] == GetBValue(IgnoreColor) &&
+                Output[index + 1] == GetGValue(IgnoreColor) &&
+                Output[index + 2] == GetRValue(IgnoreColor))
+            {
+                Output[index + 0] = Input[index + 0];
+                Output[index + 1] = Input[index + 1];
+                Output[index + 2] = Input[index + 2];
+            }
+        }
+    }
+}
 
 class BrushPP
 {
@@ -252,7 +288,9 @@ class GdiPP
 
     private:
     BYTE* PixelBuffer = nullptr;
+    BYTE* GdiBuffer = nullptr;
     bool NeedsPixelsDrawn = false;
+    COLORREF ClearColor = RGB(0, 0, 0);
 
     public:
 
@@ -271,7 +309,7 @@ class GdiPP
         this->~GdiPP();
     }
 
-    GdiPP(const HWND& Wnd, const bool IsDoubleBuffered = false) // ctor
+    GdiPP(const HWND& Wnd, const bool IsDoubleBuffered = false, HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH)) // ctor
     {
         DoubleBuffered = IsDoubleBuffered;
         this->Wnd = Wnd;
@@ -284,6 +322,8 @@ class GdiPP
             SafeReleaseDC(Wnd, ScreenDC);
             return;
         }
+
+        this->ClearColor = GetBrushColor(ClearBrush);
 
         this->UpdateClientRgn();
 
@@ -960,7 +1000,14 @@ class GdiPP
             bi.bmiHeader.biBitCount = 24;
             bi.bmiHeader.biCompression = BI_RGB;
 
-            SetDIBits(this->MemDC, this->MemBM, 0, this->ScreenSz.y, PixelBuffer, &bi, DIB_RGB_COLORS);
+            // copy bits if pixel == ClearColor dont copy
+            // create final buffer then render
+
+            GetDIBits(this->MemDC, this->MemBM, 0, this->ScreenSz.y, GdiBuffer, &bi, DIB_RGB_COLORS);
+
+            MergePixelBuffers(GdiBuffer, PixelBuffer, this->ScreenSz.x, this->ScreenSz.y, this->ClearColor);
+
+            SetDIBits(this->MemDC, this->MemBM, 0, this->ScreenSz.y, GdiBuffer, &bi, DIB_RGB_COLORS);
             this->NeedsPixelsDrawn = false;
         }
         if (!BitBlt(ScreenDC, 0, 0, this->ScreenSz.x, this->ScreenSz.y, MemDC, 0, 0, SRCCOPY))
@@ -1008,10 +1055,12 @@ class GdiPP
         this->ScreenSz.x = ClientRect.right - ClientRect.left;
         this->ScreenSz.y = ClientRect.bottom - ClientRect.top;
 
-        if (PixelBuffer != nullptr)
+        if (PixelBuffer != nullptr || GdiBuffer != nullptr)
             delete[] PixelBuffer;
 
         PixelBuffer = new BYTE[this->ScreenSz.x * ScreenSz.y * 3];
+
+        GdiBuffer = new BYTE[this->ScreenSz.x * ScreenSz.y * 3];
 
         return Stat;
     }
