@@ -21,9 +21,9 @@ int main()
     HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH);
 
     // Create Overlay
-    WndCreator Window = WndCreator(CS_CLASSDC, GetModuleHandle(NULL), L"Mouse ESP", LoadCursorW(NULL, IDC_ARROW), ClearBrush, WS_EX_LAYERED | WS_EX_TOPMOST, WS_POPUP | WS_VISIBLE, 0, 0, sx, sy);
+    WndCreatorW Window = WndCreatorW(CS_OWNDC, L"MouseESP", L"Mouse Esp", LoadCursorW(NULL, IDC_ARROW), NULL, ClearBrush, 0, WndModes::BorderLess | WndModes::ClipChildren, 0, 0, sx, sy);
 
-    Window.SetLayeredAttributes(RGB(0, 0, 0), 0, LWA_COLORKEY);
+    //Window.SetLayeredAttributes(RGB(0, 0, 0), 0, LWA_COLORKEY);
 
     // Create gdi Object
     GdiPP gdi = GdiPP(Window.Wnd, true);
@@ -38,9 +38,14 @@ int main()
     // Init Variables
     MSG msg = { 0 };
     POINT p;
+    Window.CreateChildWindow(0, WS_CHILD | WS_VISIBLE, L"Button", L"Ok", 20, 20, 50, 20, (HMENU)201);
 
-    while (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE) && !GetAsyncKeyState(VK_RETURN))
+    int sx = Window.GetClientArea().Width;
+    int sy = Window.GetClientArea().Height;
+
+    while (!GetAsyncKeyState(VK_RETURN))
     {
+        PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE);
         // Translate and Dispatch message to WindowProc
         TranslateMessage(&msg);
         DispatchMessage(&msg);
@@ -72,4 +77,3 @@ int main()
 
     return 0;
 }
-

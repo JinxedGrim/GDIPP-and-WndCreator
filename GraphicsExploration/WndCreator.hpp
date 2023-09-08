@@ -1,10 +1,13 @@
 #include <windows.h>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #define SafeReleaseDC(Wnd, DC) __pragma(warning(disable:6387)) if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); } __pragma(warning(default:6387))
 #define SafeDeleteDC(DC) __pragma(warning(disable:6387)) if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } __pragma(warning(default:6387))
 #define SafeDeleteObject(Obj) __pragma(warning(disable:6387)) if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } __pragma(warning(default:6387))
 #define SafeDestroyWindow(Wnd) __pragma(warning(disable:6387)) if(Wnd != NULL) { DestroyWindow(Wnd); } __pragma(warning(default:6387))
+#define SafeDeleteIcon(Ico) __pragma(warning(disable:6387)) if(Ico != NULL && Ico != INVALID_HANDLE_VALUE) { DestroyIcon(Ico); } __pragma(warning(default:6387))
 
 #ifdef UNICODE
 #define WndCreator WndCreatorW
@@ -12,19 +15,50 @@
 #define WndCreator WndCreatorA
 #endif // UNICODE
 
-enum WndExModes : DWORD 
+EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+#define CurrHinst ((HINSTANCE)&__ImageBase)
+
+void(__fastcall * WndCtrlEvntProcessor)() = nullptr;
+
+enum WndExModes : DWORD
 {
     FullScreenEx = WS_EX_TOPMOST,
     BorderLessEx = 0,
-    WindowedEx = 0
+    WindowedEx = 0,
+    ChildEx = 0,
+    Layered = WS_EX_LAYERED,
+    NoTaskBarAndSmallBorder = WS_EX_TOOLWINDOW
 };
 
 enum WndModes : DWORD
 {
     FullScreen = WS_POPUP | WS_VISIBLE,
     BorderLess = WS_POPUP | WS_VISIBLE,
-    Windowed = WS_OVERLAPPED | WS_VISIBLE
+    Windowed = WS_OVERLAPPED | WS_THICKFRAME | WS_VISIBLE | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MAXIMIZE,
+    Child =  WS_CHILD | WS_VISIBLE,
+    ClipChildren = WS_CLIPCHILDREN
 };
+
+enum ButtonStyles : DWORD
+{
+    RadioButton = BS_RADIOBUTTON,
+    AutoRadio = BS_AUTORADIOBUTTON,
+    PushButton = BS_PUSHBUTTON,
+    New = BS_FLAT,
+    Flat = BS_FLAT,
+    ThreeState = BS_AUTO3STATE,
+};
+
+struct ScreenDimensions
+{
+    LONG Width, Height;
+};
+
+namespace ControlColors
+{
+    COLORREF ButtonBgClr = RGB(255, 255, 255);
+    COLORREF ButtonTextClr = RGB(255, 1, 1);
+}
 
 LRESULT CALLBACK WindowProcA(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -32,14 +66,17 @@ LRESULT CALLBACK WindowProcA(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         case WM_DESTROY: // called when DestroyWindow is called
         {
+            PostQuitMessage(0);
             break; // calls DefWindowProcW: which will call WM_QUIT
         }
         case WM_CLOSE: // called when user clicks x button or alt f4
         {
+            PostQuitMessage(0);
             break; // calls DefWindowProcW: which will call Destroy Window 
         }
         case WM_QUIT: // closes window
         {
+            PostQuitMessage(0);
             break;
         }
     }
@@ -50,6 +87,14 @@ LRESULT CALLBACK WindowProcW(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
+        case WM_COMMAND:
+        {
+            if (LOWORD(wParam) == 201 && HIWORD(wParam) == BN_CLICKED)
+            {
+                MessageBox(hwnd, L"Thanks! I Needed That!", L"AAAhhhh!", MB_OK);
+            }
+            break;
+        }
         case WM_DESTROY: // called when DestroyWindow is called
         {
             PostQuitMessage(0);
@@ -69,9 +114,180 @@ LRESULT CALLBACK WindowProcW(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
 
+class WndIconW
+{
+private:
+    std::shared_ptr<HICON> Ico = nullptr;
+public:
+    HINSTANCE Hinst = 0;
+    LPCWSTR IconName = nullptr;
+
+    WndIconW(const LPCWSTR IconName, const HINSTANCE Inst = NULL)
+    {
+        this->IconName = IconName;
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconW(Inst, IconName));
+
+        if (!this->Ico)
+        {
+            // TODO Log error
+        }
+    }
+
+    WndIconW(const int ResourceID, const HINSTANCE Inst = NULL)
+    {
+        this->IconName = MAKEINTRESOURCEW(ResourceID);
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconW(Inst, MAKEINTRESOURCEW(ResourceID)));
+
+        if (!this->Ico || !*this->Ico)
+        {
+            // TODO Log error
+            throw 1;
+        }
+    }
+
+    ~WndIconW()
+    {
+        SafeDeleteIcon(*this->Ico);
+    }
+
+    bool Load(const LPCWSTR IcoName, const HINSTANCE Inst)
+    {
+        //if (NeedsDeleted)
+        //{
+        //    SafeDeleteIcon(*this->Ico);
+        //}
+
+        this->IconName = IcoName;
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconW(Inst, IcoName));
+
+        if (!*this->Ico)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    bool Load(const int ResourceID, const HINSTANCE Inst)
+    {
+        //if (NeedsDeleted)
+        //{
+        //    SafeDeleteIcon(*this->Ico);
+        //}
+
+        this->IconName = MAKEINTRESOURCEW(ResourceID);
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconW(Inst, MAKEINTRESOURCEW(ResourceID)));
+
+        if (!*this->Ico)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    HICON GetHICON()
+    {
+        return *this->Ico;
+    }
+
+    std::shared_ptr<HICON> GetSharedPointer()
+    {
+        return this->Ico;
+    }
+};
+
+class WndIconA
+{
+    private:
+    std::shared_ptr<HICON> Ico = nullptr;
+    public:
+    HINSTANCE Hinst = 0;
+    LPCSTR IconName = nullptr;
+
+    WndIconA(const LPCSTR IconName, const HINSTANCE Inst = NULL)
+    {
+        this->IconName = IconName;
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconA(Inst, IconName));
+
+        if (!this->Ico)
+        {
+            // TODO Log error
+        }
+    }
+
+    WndIconA(const int ResourceID, const HINSTANCE Inst = NULL)
+    {
+        this->IconName = MAKEINTRESOURCEA(ResourceID);
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconA(Inst, MAKEINTRESOURCEA(ResourceID)));
+
+        if (!this->Ico || !*this->Ico)
+        {
+            // TODO Log error
+            throw 1;
+        }
+    }
+
+    ~WndIconA()
+    {
+        SafeDeleteIcon(*this->Ico);
+    }
+
+    bool Load(const LPCSTR IcoName, const HINSTANCE Inst)
+    {
+        //if (NeedsDeleted)
+        //{
+        //    SafeDeleteIcon(*this->Ico);
+        //}
+
+        this->IconName = IcoName;
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconA(Inst, IcoName));
+
+        if (!*this->Ico)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    bool Load(const int ResourceID, const HINSTANCE Inst)
+    {
+        //if (NeedsDeleted)
+        //{
+        //    SafeDeleteIcon(*this->Ico);
+        //}
+
+        this->IconName = MAKEINTRESOURCEA(ResourceID);
+        this->Hinst = Inst;
+        this->Ico = std::make_shared<HICON>(LoadIconA(Inst, MAKEINTRESOURCEA(ResourceID)));
+
+        if (!*this->Ico)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    HICON GetHICON()
+    {
+        return *this->Ico;
+    }
+
+    std::shared_ptr<HICON> GetSharedPointer()
+    {
+        return this->Ico;
+    }
+};
+
+
 class WndCreatorA
 {
-public:
+    public:
     WndCreatorA()
     {
         if (!DidCreate)
@@ -87,24 +303,28 @@ public:
         }
     }
 
-    WndCreatorA(const UINT ClassStyle, const HINSTANCE hInstance, const std::string ClassName, const HCURSOR Curs, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcA)
+    WndCreatorA(const UINT ClassStyle, const std::string_view ClassName, const std::string_view MenuName, const HCURSOR Curs, const HICON Ico, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, HWND HwndParent = 0, const HINSTANCE hInstance = GetModuleHandleW(NULL), WNDPROC WndProc = WindowProcA)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXA));
-        wc = { sizeof(WNDCLASSEXA), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, Curs, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
+
+        wc = { sizeof(WNDCLASSEXA), ClassStyle, WndProc, 0L, 0L, hInstance, Ico, Curs, BackGround, MenuName.data(), ClassName.data(), NULL };
 
         if (!RegisterClassExA(&wc))
         {
-            ErrorHandler("[WndCreator] Failed To Register Window Class: " + GetLastError());
+            if (GetLastError() != 1410)
+            {
+                ErrorHandler("[WndCreator] Failed To Register Window Class: " + std::to_string(GetLastError()));
+            }
             return;
         }
 
-        this->Wnd = CreateWindowExA(ExFlags, ClassName.c_str(), ClassName.c_str(), WStyle, x, y, Width, Height, 0, 0, hInstance, 0);
+        this->Wnd = CreateWindowExA(ExFlags, ClassName.data(), MenuName.data(), WStyle, x, y, Width, Height, HwndParent, 0, hInstance, 0);
 
         if (!this->Wnd)
         {
             SafeDeleteObject(wc.hbrBackground);
             UnregisterClassA(wc.lpszClassName, wc.hInstance);
-            ErrorHandler("[WndCreator] Failed To Create Window: " + GetLastError());
+            ErrorHandler("[WndCreator] Failed To Create Window: " + std::to_string(GetLastError()));
             return;
         }
 
@@ -118,7 +338,6 @@ public:
         this->DidCreate = false;
     }
 
-    // Dtor
     ~WndCreatorA()
     {
         if (this->DidCreate)
@@ -129,27 +348,47 @@ public:
         }
     }
 
-    // Default Error Handler
     static void LogError(std::string ErrorMsg)
     {
-        std::cout << ErrorMsg << std::endl;
+        MessageBoxA(NULL, ErrorMsg.c_str(), "", MB_OK);
     }
 
     // Copying is not allowed
-    WndCreatorA(const WndCreatorA&) = delete;
-    WndCreatorA& operator=(const WndCreatorA&) = delete;
+    WndCreatorA(const WndCreatorA&) = default;
+    WndCreatorA& operator=(const WndCreatorA&) = default;
 
     // Moving is allowed
-    WndCreatorA(WndCreatorA&&) = default;
-    WndCreatorA& operator=(WndCreatorA&&) = default;
+    WndCreatorA(WndCreatorA&& Rhs) noexcept
+    {
+        this->wc = Rhs.wc;
+        this->DidCreate = Rhs.DidCreate;
+        this->Wnd = Rhs.Wnd;
+        this->ErrorHandler = Rhs.ErrorHandler;
+        this->Children = Rhs.Children;
 
-private:
+        Rhs.Wnd = NULL;
+    }
+
+    WndCreatorA& operator=(WndCreatorA&& Rhs) noexcept
+    {
+        this->wc = Rhs.wc;
+        this->DidCreate = Rhs.DidCreate;
+        this->Wnd = Rhs.Wnd;
+        this->ErrorHandler = Rhs.ErrorHandler;
+        this->Children = Rhs.Children;
+
+        Rhs.Wnd = NULL;
+
+        return *this;
+    }
+
+    private:
     WNDCLASSEXA wc = {};
     bool DidCreate = false;
-public:
-
+    public:
     HWND Wnd = NULL;
     void(*ErrorHandler)(std::string) = LogError;
+    std::vector<HWND> Children = {};
 
     const bool Hide()
     {
@@ -191,7 +430,7 @@ public:
         return ShowWindow(this->Wnd, SW_MINIMIZE);
     }
 
-    const bool AddStyleFlags(const DWORD StyleToAdd)
+    const bool AddStyleFlags(const LONG_PTR StyleToAdd)
     {
         if (!this->Wnd)
         {
@@ -203,17 +442,45 @@ public:
 
         if (!Style)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+
+        Hide();
+        Style |= StyleToAdd;
+        if (!SetWindowLongPtrA(this->Wnd, GWL_STYLE, Style))
+        {
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+        Show();
+
+        return true;
+    }
+
+    const bool AddStyleFlagsEx(const LONG_PTR ExStyle)
+    {
+        if (!this->Wnd)
+        {
+            ErrorHandler("[WndCreator] Error Window Handle Is Null");
+            return false;
+        }
+
+        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_EXSTYLE);
+
+        if (!Style)
+        {
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
         Hide();
 
-        Style |= StyleToAdd;
+        Style |= ExStyle;
 
-        if (!SetWindowLongPtrA(this->Wnd, GWL_STYLE, Style))
+        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, Style))
         {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
@@ -234,21 +501,50 @@ public:
 
         if (!Style)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
             return false;
         }
+
+        Style &= ~(StyleToSub);
 
         Hide();
 
-        Style &= ~(StyleToSub);
-        
         if (!SetWindowLongPtrA(this->Wnd, GWL_STYLE, Style))
         {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
             return false;
         }
-        
+
         Show();
+
+        return true;
+    }
+
+    const bool SubStyleFlagsEx(const LONG_PTR ExStyle)
+    {
+        if (!this->Wnd)
+        {
+            ErrorHandler("[WndCreator] Error Window Handle Is Null");
+            return false;
+        }
+
+        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_EXSTYLE);
+
+        if (!Style)
+        {
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+
+        Style &= ~(ExStyle);
+
+        this->Hide();
+        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, Style))
+        {
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+        this->Show();
 
         return true;
     }
@@ -261,30 +557,20 @@ public:
             return false;
         }
 
-        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_STYLE);
-
-        if (!Style)
+        this->Hide();
+        SetLastError(0);
+        if (!SetWindowLongPtrA(this->Wnd, GWL_STYLE, NewStyle) && GetLastError() != 0)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            std::string err = std::to_string(GetLastError());
+            ErrorHandler(std::string("[WndCreator] Error Setting Window Ex Style: (" + err + ")"));
             return false;
         }
-
-        Hide();
-
-        Style = NewStyle;
-
-        if (!SetWindowLongPtrA(this->Wnd, GWL_STYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
+        this->Show();
 
         return true;
     }
 
-    const bool AddExStyleFlags(const LONG_PTR ExStyle)
+    const bool ResetStyleEx(const LONG_PTR NewExStyle)
     {
         if (!this->Wnd)
         {
@@ -292,104 +578,33 @@ public:
             return false;
         }
 
-        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
+        this->Hide();
+        SetLastError(0);
+        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, NewExStyle) && GetLastError() != 0)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            std::string err = std::to_string(GetLastError());
+            ErrorHandler(std::string("[WndCreator] Error Setting Window Ex Style: (" + err + ")"));
             return false;
         }
-
-        Hide();
-
-        Style |= ExStyle;
-
-        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
+        this->Show();
 
         return true;
     }
 
-    const bool SubExStyleFlags(const LONG_PTR ExStyle)
-    {
-        if (!this->Wnd)
-        {
-            ErrorHandler("[WndCreator] Error Window Handle Is Null");
-            return false;
-        }
-
-        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
-        {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
-            return false;
-        }
-
-        Hide();
-
-        Style &= ~(ExStyle);
-        
-        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-        
-        Show();
-
-        return true;
-    }
-
-    const bool ResetExStyle(const DWORD NewExStyle)
-    {
-        if (!this->Wnd)
-        {
-            ErrorHandler("[WndCreator] Error Window Handle Is Null");
-            return false;
-        }
-
-        LONG_PTR Style = GetWindowLongPtrA(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
-        {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
-            return false;
-        }
-
-        Hide();
-        Style = NewExStyle;
-
-        if (!SetWindowLongPtrA(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
-
-        return true;
-    }
-
-    const POINT GetWindowSz()
+    const ScreenDimensions GetClientArea()
     {
         RECT rect;
-        if (GetWindowRect(this->Wnd, &rect))
+        if (GetClientRect(this->Wnd, &rect))
         {
-            return{ rect.right - rect.left, rect.bottom - rect.top };
+            return{ rect.right, rect.bottom };
         }
         else
         {
-            return {0, 0};
+            return { 0, 0 };
         }
     }
 
-    const bool SetWndSz(const HWND WndZPos, const int X, int const Y, const int Width, const int Height, const UINT SwFlags)
+    const bool SetWndSz(const HWND WndZPos, const int X, const int Y, const int Width, const int Height, const UINT SwFlags)
     {
         if (!this->Wnd)
         {
@@ -399,11 +614,26 @@ public:
 
         if (!SetWindowPos(this->Wnd, WndZPos, X, Y, Width, Height, SwFlags))
         {
-            ErrorHandler("[WndCreator] Error with SetWindowPos: " + GetLastError());
+            ErrorHandler("[WndCreator] Error with SetWindowPos: " + std::to_string(GetLastError()));
             return false;
         }
 
         return true;
+    }
+
+    const bool SetWndTitle(const std::string_view Str)
+    {
+        return SetWindowTextA(this->Wnd, Str.data());
+    }
+
+    const bool HasFocus()
+    {
+        if (GetFocus() == this->Wnd)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     const bool SetLayeredAttributes(const COLORREF CrKey, const BYTE Alpha, const DWORD DwFlags = LWA_COLORKEY)
@@ -413,10 +643,10 @@ public:
             ErrorHandler("[WndCreator] Error Window Handle Is Null");
             return false;
         }
-        
+
         if (!SetLayeredWindowAttributes(Wnd, CrKey, Alpha, DwFlags))
         {
-            ErrorHandler("[WndCreator] Failed to set layered attributes: " + GetLastError());
+            ErrorHandler("[WndCreator] Failed to set layered attributes: " + std::to_string(GetLastError()));
             return false;
         }
 
@@ -432,6 +662,26 @@ public:
         }
 
         return SendMessageA(this->Wnd, MSG, WParam, LParam);
+    }
+
+    void CreateChildWindow(const DWORD ExFlags, const DWORD WStyle, const std::string_view ClassName, const std::string_view WndName, const int x, const int y, const int Width, const int Height, const HMENU Hmenu)
+    {
+        HWND hwndButton = CreateWindowExA(ExFlags, ClassName.data(), WndName.data(), WStyle, x, y, Width, Height, this->Wnd, Hmenu, (HINSTANCE)GetWindowLongPtrW(this->Wnd, GWLP_HINSTANCE), NULL);
+
+        this->Children.push_back(hwndButton);
+    }
+
+    void CreateButton(const DWORD ButtonStyle, std::string_view ButtonText, const int x, const int y, const int Width, const int Height, const DWORD ID)
+    {
+        this->CreateChildWindow(WndExModes::ChildEx, WndModes::Child | WndModes::ClipChildren | ButtonStyle, "BUTTON", ButtonText, x, y, Width, Height, (HMENU)ID);
+    }
+
+    void UpdateChildren()
+    {
+        for (HWND W : this->Children)
+        {
+            UpdateWindow(W);
+        }
     }
 
     const void Destroy()
@@ -458,25 +708,28 @@ public:
         }
     }
 
-    WndCreatorW(const UINT ClassStyle, const HINSTANCE hInstance, const std::wstring ClassName, const HCURSOR Curs, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, WNDPROC WndProc = WindowProcW)
+    WndCreatorW(const UINT ClassStyle, const std::wstring_view ClassName, const std::wstring_view WindowName, const HCURSOR Curs, const HICON Ico, const HBRUSH BackGround, const DWORD ExFlags, const DWORD WStyle, const int x, const int y, const int Width, const int Height, HWND HwndParent = 0, const HINSTANCE hInstance = GetModuleHandleW(NULL), WNDPROC WndProc = WindowProcW)
     {
         SecureZeroMemory(&wc, sizeof(WNDCLASSEXW));
 
-        wc = { sizeof(WNDCLASSEXW), ClassStyle, WndProc, 0L, 0L, hInstance, NULL, Curs, BackGround, ClassName.c_str(), ClassName.c_str(), NULL };
+        wc = { sizeof(WNDCLASSEXW), ClassStyle, WndProc, 0L, 0L, hInstance, Ico, Curs, BackGround, NULL, ClassName.data(), NULL };
 
         if (!RegisterClassExW(&wc))
         {
-            ErrorHandler("[WndCreator] Failed To Register Window Class: " + GetLastError());
+            if (GetLastError() != 1410)
+            {
+                ErrorHandler("[WndCreator] Failed To Register Window Class: " + std::to_string(GetLastError()));
+            }
             return;
         }
 
-        this->Wnd = CreateWindowExW(ExFlags, ClassName.c_str(), ClassName.c_str(), WStyle, x, y, Width, Height, 0, 0, hInstance, 0);
+        this->Wnd = CreateWindowExW(ExFlags, ClassName.data(), WindowName.data(), WStyle, x, y, Width, Height, HwndParent, 0, hInstance, 0);
 
         if (!this->Wnd)
         {
             SafeDeleteObject(wc.hbrBackground);
             UnregisterClassW(wc.lpszClassName, wc.hInstance);
-            ErrorHandler("[WndCreator] Failed To Create Window: " + GetLastError());
+            ErrorHandler("[WndCreator] Failed To Create Window: " + std::to_string(GetLastError()));
             return;
         }
 
@@ -502,16 +755,37 @@ public:
 
     static void LogError(std::string ErrorMsg)
     {
-        std::cout << ErrorMsg << std::endl;
+        MessageBoxA(NULL, ErrorMsg.c_str(), "", MB_OK);
     }
 
     // Copying is not allowed
-    WndCreatorW(const WndCreatorW&) = delete;
-    WndCreatorW& operator=(const WndCreatorW&) = delete;
+    WndCreatorW(const WndCreatorW&) = default;
+    WndCreatorW& operator=(const WndCreatorW&) = default;
 
     // Moving is allowed
-    WndCreatorW(WndCreatorW&&) = default;
-    WndCreatorW& operator=(WndCreatorW&&) = default;
+    WndCreatorW(WndCreatorW&& Rhs) noexcept
+    {
+        this->wc = Rhs.wc;
+        this->DidCreate = Rhs.DidCreate;
+        this->Wnd = Rhs.Wnd;
+        this->ErrorHandler = Rhs.ErrorHandler;
+        this->Children = Rhs.Children;
+
+        Rhs.Wnd = NULL;
+    }
+
+    WndCreatorW& operator=(WndCreatorW&& Rhs) noexcept
+    {
+        this->wc = Rhs.wc;
+        this->DidCreate = Rhs.DidCreate;
+        this->Wnd = Rhs.Wnd;
+        this->ErrorHandler = Rhs.ErrorHandler;
+        this->Children = Rhs.Children;
+
+        Rhs.Wnd = NULL;
+
+        return *this;
+    }
 
 private:
     WNDCLASSEXW wc = {};
@@ -519,6 +793,7 @@ private:
 public:
     HWND Wnd = NULL;
     void(*ErrorHandler)(std::string) = LogError;
+    std::vector<HWND> Children = {};
 
     const bool Hide()
     {
@@ -560,7 +835,7 @@ public:
         return ShowWindow(this->Wnd, SW_MINIMIZE);
     }
 
-    const bool AddStyleFlags(const DWORD StyleToAdd)
+    const bool AddStyleFlags(const LONG_PTR StyleToAdd)
     {
         if (!this->Wnd)
         {
@@ -572,17 +847,45 @@ public:
 
         if (!Style)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+
+        Hide();
+        Style |= StyleToAdd;
+        if (!SetWindowLongPtrW(this->Wnd, GWL_STYLE, Style))
+        {
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+        Show();
+
+        return true;
+    }
+
+    const bool AddStyleFlagsEx(const LONG_PTR ExStyle)
+    {
+        if (!this->Wnd)
+        {
+            ErrorHandler("[WndCreator] Error Window Handle Is Null");
+            return false;
+        }
+
+        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_EXSTYLE);
+
+        if (!Style)
+        {
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
         Hide();
 
-        Style |= StyleToAdd;
+        Style |= ExStyle;
 
-        if (!SetWindowLongPtrW(this->Wnd, GWL_STYLE, Style))
+        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, Style))
         {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
@@ -603,21 +906,50 @@ public:
 
         if (!Style)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
-        Hide();
-        
         Style &= ~(StyleToSub);
+
+        Hide();
 
         if (!SetWindowLongPtrW(this->Wnd, GWL_STYLE, Style))
         {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
             return false;
         }
 
         Show();
+
+        return true;
+    }
+
+    const bool SubStyleFlagsEx(const LONG_PTR ExStyle)
+    {
+        if (!this->Wnd)
+        {
+            ErrorHandler("[WndCreator] Error Window Handle Is Null");
+            return false;
+        }
+
+        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_EXSTYLE);
+
+        if (!Style)
+        {
+            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+
+        Style &= ~(ExStyle);
+
+        this->Hide();
+        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, Style))
+        {
+            ErrorHandler("[WndCreator] Error Setting Window Style: " + std::to_string(GetLastError()));
+            return false;
+        }
+        this->Show();
 
         return true;
     }
@@ -630,30 +962,20 @@ public:
             return false;
         }
 
-        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_STYLE);
-
-        if (!Style)
+        this->Hide();
+        SetLastError(0);
+        if (!SetWindowLongPtrW(this->Wnd, GWL_STYLE, NewStyle) && GetLastError() != 0)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            std::string err = std::to_string(GetLastError());
+            ErrorHandler(std::string("[WndCreator] Error Setting Window Ex Style: (" + err + ")"));
             return false;
         }
-
-        Hide();
-
-        Style = NewStyle;
-
-        if (!SetWindowLongPtrW(this->Wnd, GWL_STYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
+        this->Show();
 
         return true;
     }
 
-    const bool AddExStyleFlags(const LONG_PTR ExStyle)
+    const bool ResetStyleEx(const LONG_PTR NewExStyle)
     {
         if (!this->Wnd)
         {
@@ -661,97 +983,25 @@ public:
             return false;
         }
 
-        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
+        this->Hide();
+        SetLastError(0);
+        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, NewExStyle) && GetLastError() != 0)
         {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
+            std::string err = std::to_string(GetLastError());
+            ErrorHandler(std::string("[WndCreator] Error Setting Window Ex Style: (" + err + ")"));
             return false;
         }
-
-        Hide();
-
-        Style |= ExStyle;
-
-        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
+        this->Show();
 
         return true;
     }
 
-    const bool SubExStyleFlags(const LONG_PTR ExStyle)
-    {
-        if (!this->Wnd)
-        {
-            ErrorHandler("[WndCreator] Error Window Handle Is Null");
-            return false;
-        }
-
-        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
-        {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
-            return false;
-        }
-
-        Hide();
-
-        Style &= ~(ExStyle);
-
-        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
-
-        return true;
-    }
-     
-    const bool ResetExStyle(const DWORD NewExStyle)
-    {
-        if (!this->Wnd)
-        {
-            ErrorHandler("[WndCreator] Error Window Handle Is Null");
-            return false;
-        }
-
-        LONG_PTR Style = GetWindowLongPtrW(this->Wnd, GWL_EXSTYLE);
-
-        if (!Style)
-        {
-            ErrorHandler("[WndCreator] Error Retrieving Window Style: " + GetLastError());
-            return false;
-        }
-
-        Hide();
-
-        Style = NewExStyle;
-
-        if (!SetWindowLongPtrW(this->Wnd, GWL_EXSTYLE, Style))
-        {
-            ErrorHandler("[WndCreator] Error Setting Window Style: " + GetLastError());
-            return false;
-        }
-
-        Show();
-
-        return true;
-    }
-
-    const POINT GetWindowSz()
+    const ScreenDimensions GetClientArea()
     {
         RECT rect;
-        if (GetWindowRect(this->Wnd, &rect))
+        if (GetClientRect(this->Wnd, &rect))
         {
-            return{ rect.right - rect.left, rect.bottom - rect.top };
+            return{ rect.right, rect.bottom};
         }
         else
         {
@@ -769,11 +1019,26 @@ public:
 
         if (!SetWindowPos(this->Wnd, WndZPos, X, Y, Width, Height, SwFlags))
         {
-            ErrorHandler("[WndCreator] Error with SetWindowPos: " + GetLastError());
+            ErrorHandler("[WndCreator] Error with SetWindowPos: " + std::to_string(GetLastError()));
             return false;
         }
 
         return true;
+    }
+
+    const bool SetWndTitle(const std::string& Str)
+    {
+        return SetWindowTextA(this->Wnd, Str.c_str());
+    }
+
+    const bool HasFocus()
+    {
+        if (GetFocus() == this->Wnd)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     const bool SetLayeredAttributes(const COLORREF CrKey, const BYTE Alpha, const DWORD DwFlags = LWA_COLORKEY)
@@ -786,7 +1051,7 @@ public:
 
         if (!SetLayeredWindowAttributes(Wnd, CrKey, Alpha, DwFlags))
         {
-            ErrorHandler("[WndCreator] Failed to set layered attributes: " + GetLastError());
+            ErrorHandler("[WndCreator] Failed to set layered attributes: " + std::to_string(GetLastError()));
             return false;
         }
 
@@ -802,6 +1067,25 @@ public:
         }
 
         return SendMessageW(this->Wnd, MSG, WParam, LParam);
+    }
+
+    void CreateChildWindow(const DWORD ExFlags, const DWORD WStyle, const std::wstring_view ClassName, const std::wstring_view WndName, const int x, const int y, const int Width, const int Height, const HMENU Hmenu)
+    {
+        HWND hwndButton = CreateWindowExW(ExFlags, ClassName.data(), WndName.data(), WStyle, x, y, Width, Height, this->Wnd,Hmenu, (HINSTANCE)GetWindowLongPtrW(this->Wnd, GWLP_HINSTANCE), NULL);
+        this->Children.push_back(hwndButton);
+    }
+
+    void CreateButton(const DWORD ButtonStyle, const std::wstring_view ButtonText, const int x, const int y, const int Width, const int Height, const HMENU ID)
+    {
+        this->CreateChildWindow(WndExModes::ChildEx, WndModes::Child | WndModes::ClipChildren | ButtonStyle, L"BUTTON", ButtonText.data(), x, y, Width, Height, ID);
+    }
+
+    void UpdateChildren()
+    {
+        for (HWND W : this->Children)
+        {
+            UpdateWindow(W);
+        }
     }
 
     const void Destroy()
