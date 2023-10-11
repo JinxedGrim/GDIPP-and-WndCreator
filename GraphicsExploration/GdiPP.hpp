@@ -1,29 +1,31 @@
 #include <windows.h>
-
-#define NoDepends
-
 #define GDIPP_FILLRECT 0x1
 #define GDIPP_REDRAW 0x2
 #define GDIPP_INVALIDATE 0x3
-
 #define SafeReleaseDC(Wnd, DC) __pragma(warning(disable:6387)) if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); } __pragma(warning(default:6387))
 #define SafeDeleteDC(DC) __pragma(warning(disable:6387)) if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } __pragma(warning(default:6387))
 #define SafeDeleteObject(Obj) __pragma(warning(disable:6387)) if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } __pragma(warning(default:6387))
 #define SafeSelectObject(DC, New, Old, Type) __pragma(warning(disable:6387)) if(New != NULL && New != INVALID_HANDLE_VALUE) { Old = (Type)SelectObject(DC, New); } __pragma(warning(default:6387))
 
+#define NoDepends
+//#define PARALLEL_OMP
+
 // TODO: 
-// 1. Fix all lines with TODO next to them 
-// 2. add aa using ms algo 
-//     2a. Create original bitmap for drawing
-//     2b. Create temporary bitmap (2x, 4x or 8x) larger than the original bitmap
-//     2c. Render your graphics to this large temporary bitmap 
+// 1. add aa using ms algo 
+//     1a. Create original bitmap for drawing
+//     1b. Create temporary bitmap (2x, 4x or 8x) larger than the original bitmap
+//     1c. Render your graphics to this large temporary bitmap 
 //        (use any GDI method, pen or brush you like) 
 //        but scale the graphics appropriately
-//     2d. Draw this temporary bitmap on the original bitmap scaled 
+//     1d. Draw this temporary bitmap on the original bitmap scaled 
 //        (i.e. using StretchDIBits() method or any other you like), 
 //        but call SetStretchBltMode(HALFTONE)
 //        before this last step for the original DC 
 //        (which holds the original bitmap), and after scaling restore it back
+//
+// 2. 
+
+
 
 COLORREF GetBrushColor(HBRUSH brush)
 {
@@ -39,28 +41,7 @@ COLORREF GetBrushColor(HBRUSH brush)
     return lbr.lbColor;
 }
 
-void MergePixelBuffers(PBYTE Output, PBYTE Input, const int Width, const int Height, COLORREF IgnoreColor)
-{
-    for (int Y = 0; Y < Height; Y++)
-    {
-        for (int X = 0; X < Width; X++)
-        {
-            // BGR format for some reason 
-            int index = (X + Width * Y) * 3;
-
-            // Check pixel buffer if its color != IgnoreColor copy to final out buffer
-
-            if (Output[index + 0] == GetBValue(IgnoreColor) &&
-                Output[index + 1] == GetGValue(IgnoreColor) &&
-                Output[index + 2] == GetRValue(IgnoreColor))
-            {
-                Output[index + 0] = Input[index + 0];
-                Output[index + 1] = Input[index + 1];
-                Output[index + 2] = Input[index + 2];
-            }
-        }
-    }
-}
+#define PixelRound(Val) (int)std::roundf(Val)
 
 class BrushPP
 {
@@ -285,6 +266,7 @@ class GdiPP
     HBITMAP MemBM = NULL;
     HBITMAP OldBM = NULL;
     void(*ErrorHandler)(std::string) = LogError;
+    int Stride = 0;
 
     private:
     BYTE* PixelBuffer = nullptr;
@@ -292,12 +274,35 @@ class GdiPP
     bool NeedsPixelsDrawn = false;
     COLORREF ClearColor = RGB(0, 0, 0);
 
-    public:
-
-    int __inline __fastcall PixelRound(float Val)
+    void __inline __fastcall MergePixelBuffers(PBYTE Output, PBYTE Input, const int Width, const int Height, COLORREF IgnoreColor)
     {
-        return (int)std::roundf(Val);
+        int i;
+#ifdef PARALLEL_OMP
+#pragma omp parallel for
+#endif
+        for (i = 0; i < Width * Height; i++)
+        {
+            unsigned long long Index = i * 3;
+
+            // BGR format for some reason 
+            PBYTE OutIdx = (PBYTE)((unsigned long long)Output + Index);
+            PBYTE InIdx = (PBYTE)((unsigned long long)Input + Index);
+
+            // Check pixel buffer if its color != IgnoreColor copy to final out buffer
+
+            if (OutIdx[0] == GetBValue(IgnoreColor) &&
+                OutIdx[1] == GetGValue(IgnoreColor) &&
+                OutIdx[2] == GetRValue(IgnoreColor))
+            {
+                OutIdx[0] = InIdx[0];
+                OutIdx[1] = InIdx[1];
+                OutIdx[2] = InIdx[2];
+            }
+        }
     }
+
+
+    public:
 
     static void LogError(std::string ErrorMsg)
     {
@@ -732,25 +737,28 @@ class GdiPP
         return Status;
     }
 
-    const bool __inline __fastcall SetPixel(const int X, const int Y, COLORREF Clr)
+    const bool __inline __fastcall SetPixel(const int& X, const int& Y, COLORREF Clr)
     {
-        if (!DoubleBuffered)
+        if (DoubleBuffered)
+        {
+            if (!MemDC || !PixelBuffer)
+                return false;
+
+            int index = (Y * this->Stride) + (X * 3);
+
+            PBYTE pixelPtr = &PixelBuffer[index];
+            *pixelPtr++ = GetBValue(Clr);
+            *pixelPtr++ = GetGValue(Clr);
+            *pixelPtr = GetRValue(Clr);
+            this->NeedsPixelsDrawn = true;
+            return true;
+        }
+        else
         {
             if (!ScreenDC)
                 return false;
 
             return SetPixelV(ScreenDC, X, Y, Clr);
-        }
-        else
-        {
-            if (!MemDC || PixelBuffer == nullptr)
-                return false;
-
-            int index = (X + this->ScreenSz.x * Y) * 3;
-            PixelBuffer[index + 0] = GetBValue(Clr);
-            PixelBuffer[index + 1] = GetGValue(Clr);
-            PixelBuffer[index + 2] = GetRValue(Clr);
-            this->NeedsPixelsDrawn = true;
         }
     }
 
@@ -783,7 +791,7 @@ class GdiPP
 
     // Filled Shapes
     // Note: It is the responsibility of the caller to free the brush 
-    const bool DrawFilledRect(const int X, const int Y, const int Width, const int Height, HBRUSH BG, HPEN OutLine = (HPEN)INVALID_HANDLE_VALUE)
+    const bool DrawFilledRect(const int X, const int Y, const int Width, const int Height, HBRUSH BG)
     {
         if (!DoubleBuffered)
         {
@@ -1007,8 +1015,10 @@ class GdiPP
 
             MergePixelBuffers(GdiBuffer, PixelBuffer, this->ScreenSz.x, this->ScreenSz.y, this->ClearColor);
 
-            SetDIBits(this->MemDC, this->MemBM, 0, this->ScreenSz.y, GdiBuffer, &bi, DIB_RGB_COLORS);
+            SetDIBitsToDevice(this->ScreenDC, 0, 0, this->ScreenSz.x, this->ScreenSz.y, 0, 0, 0, this->ScreenSz.y, GdiBuffer, &bi, DIB_RGB_COLORS);
+
             this->NeedsPixelsDrawn = false;
+            return true;
         }
         if (!BitBlt(ScreenDC, 0, 0, this->ScreenSz.x, this->ScreenSz.y, MemDC, 0, 0, SRCCOPY))
         {
@@ -1024,6 +1034,13 @@ class GdiPP
     // Note: It is the responsibility of the caller to free the brush 
     void Clear(const DWORD ClearMode = GDIPP_FILLRECT, const HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH))
     {
+        LOGBRUSH lb;
+
+        if (GetObject(ClearBrush, sizeof(LOGBRUSH), &lb) != 0)
+            this->ClearColor = lb.lbColor;
+        else
+            this->ErrorHandler("[GDIPP] Unable to get brush color");
+
         ZeroMemory(PixelBuffer, this->ScreenSz.x * this->ScreenSz.y * 3);
 
         if (ClearMode == GDIPP_FILLRECT)
@@ -1052,15 +1069,22 @@ class GdiPP
     bool UpdateClientRgn()
     {
         bool Stat = GetClientRect(Wnd, &this->ClientRect);
+        int bytesPerPixel = 3; // 24-bit RGB image
+
         this->ScreenSz.x = ClientRect.right - ClientRect.left;
         this->ScreenSz.y = ClientRect.bottom - ClientRect.top;
+        this->Stride = ((this->ScreenSz.x * bytesPerPixel + 3) / 4) * 4; // Calculate stride
 
         if (PixelBuffer != nullptr || GdiBuffer != nullptr)
+        {
             delete[] PixelBuffer;
+            delete[] GdiBuffer;
+            PixelBuffer = nullptr;
+            GdiBuffer = nullptr;
+        }
 
-        PixelBuffer = new BYTE[this->ScreenSz.x * ScreenSz.y * 3];
-
-        GdiBuffer = new BYTE[this->ScreenSz.x * ScreenSz.y * 3];
+        PixelBuffer = new BYTE[this->Stride * ScreenSz.y];
+        GdiBuffer = new BYTE[this->Stride * ScreenSz.y];
 
         return Stat;
     }
