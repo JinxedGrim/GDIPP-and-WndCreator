@@ -1,11 +1,27 @@
 #include <windows.h>
+#include <memory>
+
 #define GDIPP_FILLRECT 0x1
 #define GDIPP_REDRAW 0x2
 #define GDIPP_INVALIDATE 0x3
-#define SafeReleaseDC(Wnd, DC) __pragma(warning(disable:6387)) if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); } __pragma(warning(default:6387))
-#define SafeDeleteDC(DC) __pragma(warning(disable:6387)) if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } __pragma(warning(default:6387))
-#define SafeDeleteObject(Obj) __pragma(warning(disable:6387)) if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } __pragma(warning(default:6387))
-#define SafeSelectObject(DC, New, Old, Type) __pragma(warning(disable:6387)) if(New != NULL && New != INVALID_HANDLE_VALUE) { Old = (Type)SelectObject(DC, New); } __pragma(warning(default:6387))
+
+#if __cplusplus < 201103L
+#error "C++11 or a later version is required for std::shared_ptr"
+#endif
+
+#ifdef _MSC_VER
+__pragma(warning(disable:6387))
+#pragma comment(lib, "gdi32.lib")
+#endif
+
+#define SafeReleaseDC(Wnd, DC)  if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); } 
+#define SafeDeleteDC(DC)  if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } 
+#define SafeDeleteObject(Obj)  if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } 
+#define SafeSelectObject(DC, New, Old, Type)  if(New != NULL && New != INVALID_HANDLE_VALUE) { Old = (Type)SelectObject(DC, New); } 
+
+#ifdef _MSC_VER
+__pragma(warning(default:6387))
+#endif
 
 #define NoDepends
 //#define PARALLEL_OMP
