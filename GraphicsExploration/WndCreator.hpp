@@ -2,12 +2,25 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <memory>
 
-#define SafeReleaseDC(Wnd, DC) __pragma(warning(disable:6387)) if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); } __pragma(warning(default:6387))
-#define SafeDeleteDC(DC) __pragma(warning(disable:6387)) if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); } __pragma(warning(default:6387))
-#define SafeDeleteObject(Obj) __pragma(warning(disable:6387)) if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); } __pragma(warning(default:6387))
-#define SafeDestroyWindow(Wnd) __pragma(warning(disable:6387)) if(Wnd != NULL) { DestroyWindow(Wnd); } __pragma(warning(default:6387))
-#define SafeDeleteIcon(Ico) __pragma(warning(disable:6387)) if(Ico != NULL && Ico != INVALID_HANDLE_VALUE) { DestroyIcon(Ico); } __pragma(warning(default:6387))
+#if __cplusplus < 201103L
+#error "C++11 or a later version is required for std::shared_ptr"
+#endif
+
+#ifdef _MSC_VER
+#pragma comment(lib, "gdi32.lib")
+#endif
+
+#define SafeReleaseDC(Wnd, DC)  if((DC != NULL && DC != INVALID_HANDLE_VALUE) && Wnd != NULL) { ReleaseDC(Wnd, DC); }
+#define SafeDeleteDC(DC)  if(DC != NULL && DC != INVALID_HANDLE_VALUE) { DeleteDC(DC); }
+#define SafeDeleteObject(Obj)  if(Obj != NULL && Obj != INVALID_HANDLE_VALUE) { DeleteObject(Obj); }
+#define SafeDestroyWindow(Wnd)  if(Wnd != NULL) { DestroyWindow(Wnd); }
+#define SafeDeleteIcon(Ico)  if(Ico != NULL && Ico != INVALID_HANDLE_VALUE) { DestroyIcon(Ico); }
+
+#ifdef _MSC_VER
+__pragma(warning(default:6387))
+#endif
 
 #ifdef UNICODE
 #define WndCreator WndCreatorW
@@ -91,7 +104,7 @@ LRESULT CALLBACK WindowProcW(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         {
             if (LOWORD(wParam) == 201 && HIWORD(wParam) == BN_CLICKED)
             {
-                MessageBox(hwnd, L"Thanks! I Needed That!", L"AAAhhhh!", MB_OK);
+                MessageBoxW(hwnd, L"Thanks! I Needed That!", L"AAAhhhh!", MB_OK);
             }
             break;
         }
@@ -1026,9 +1039,9 @@ public:
         return true;
     }
 
-    const bool SetWndTitle(const std::string& Str)
+    const bool SetWndTitle(const std::wstring& Str)
     {
-        return SetWindowTextA(this->Wnd, Str.c_str());
+        return SetWindowTextW(this->Wnd, Str.c_str());
     }
 
     const bool HasFocus()
