@@ -6,7 +6,9 @@
 #define GDIPP_INVALIDATE 0x3
 
 #if __cplusplus < 201103L
+#ifndef _MSC_VER
 #error "C++11 or a later version is required for std::shared_ptr"
+#endif
 #endif
 
 #ifdef _MSC_VER
