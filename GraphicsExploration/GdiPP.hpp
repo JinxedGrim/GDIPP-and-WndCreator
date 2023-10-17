@@ -4,6 +4,7 @@
 #define GDIPP_FILLRECT 0x1
 #define GDIPP_REDRAW 0x2
 #define GDIPP_INVALIDATE 0x3
+#define GDIPP_PIXELCLEAR 0x4
 
 #if __cplusplus < 201103L
 #ifndef _MSC_VER
@@ -285,6 +286,7 @@ class GdiPP
     HBITMAP OldBM = NULL;
     void(*ErrorHandler)(std::string) = LogError;
     int Stride = 0;
+    BITMAPINFO bi;
 
     private:
     BYTE* PixelBuffer = nullptr;
@@ -292,32 +294,27 @@ class GdiPP
     bool NeedsPixelsDrawn = false;
     COLORREF ClearColor = RGB(0, 0, 0);
 
-    void __inline __fastcall MergePixelBuffers(PBYTE Output, PBYTE Input, const int Width, const int Height, COLORREF IgnoreColor)
+    void MergePixelBuffers(PBYTE Output, PBYTE Input, int Width, int Height, COLORREF IgnoreColor)
     {
-        int i;
+        unsigned char IgnoreB = GetBValue(IgnoreColor);
+        unsigned char IgnoreG = GetGValue(IgnoreColor);
+        unsigned char IgnoreR = GetRValue(IgnoreColor);
+
 #ifdef PARALLEL_OMP
 #pragma omp parallel for
 #endif
-        for (i = 0; i < Width * Height; i++)
+        for (int i = 0; i < Width * Height; i++)
         {
-            unsigned long long Index = i * 3;
+            PBYTE OutIdx = Output + i * 3;
+            PBYTE InIdx = Input + i * 3;
 
-            // BGR format for some reason 
-            PBYTE OutIdx = (PBYTE)((unsigned long long)Output + Index);
-            PBYTE InIdx = (PBYTE)((unsigned long long)Input + Index);
-
-            // Check pixel buffer if its color != IgnoreColor copy to final out buffer
-
-            if (OutIdx[0] == GetBValue(IgnoreColor) &&
-                OutIdx[1] == GetGValue(IgnoreColor) &&
-                OutIdx[2] == GetRValue(IgnoreColor))
+            if (OutIdx[0] == IgnoreB && OutIdx[1] == IgnoreG && OutIdx[2] == IgnoreR)
             {
-                OutIdx[0] = InIdx[0];
-                OutIdx[1] = InIdx[1];
-                OutIdx[2] = InIdx[2];
+                std::memcpy(OutIdx, InIdx, 3);  // using memcpy for copying can sometimes be faster
             }
         }
     }
+
 
 
     public:
@@ -364,6 +361,14 @@ class GdiPP
                 SafeDeleteObject(OldBM);
             }
         }
+
+        ZeroMemory(&bi, sizeof(bi));
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = this->ScreenSz.x;
+        bi.bmiHeader.biHeight = -this->ScreenSz.y;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 24;
+        bi.bmiHeader.biCompression = BI_RGB;
     }
 
     // disable copy
@@ -780,30 +785,41 @@ class GdiPP
         }
     }
 
+    void __inline __fastcall QuickSetPixel(const int& X, const int& Y, COLORREF Clr)
+    {
+        int index = (Y * this->Stride) + (X * 3);
+
+        PBYTE pixelPtr = &PixelBuffer[index];
+        *pixelPtr++ = GetBValue(Clr);
+        *pixelPtr++ = GetGValue(Clr);
+        *pixelPtr = GetRValue(Clr);
+        this->NeedsPixelsDrawn = true;
+    }
+
     const bool __inline __fastcall SetBits(const int Width, const int Height, void* Bits, const int StartHeight = 0)
     {
-        static BITMAPINFO bi;
-        ZeroMemory(&bi, sizeof(bi));
-        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bi.bmiHeader.biWidth = Width;
-        bi.bmiHeader.biHeight = -Height;
-        bi.bmiHeader.biPlanes = 1;
-        bi.bmiHeader.biBitCount = 24;
-        bi.bmiHeader.biCompression = BI_RGB;
+        static BITMAPINFO BI;
+        ZeroMemory(&BI, sizeof(BI));
+        BI.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        BI.bmiHeader.biWidth = Width;
+        BI.bmiHeader.biHeight = -Height;
+        BI.bmiHeader.biPlanes = 1;
+        BI.bmiHeader.biBitCount = 24;
+        BI.bmiHeader.biCompression = BI_RGB;
 
         if (!DoubleBuffered)
         {
             if (!ScreenDC)
                 return false;
 
-            SetDIBits(this->ScreenDC, this->MemBM, StartHeight, Height, Bits, &bi, DIB_RGB_COLORS);
+            SetDIBits(this->ScreenDC, this->MemBM, StartHeight, Height, Bits, &BI, DIB_RGB_COLORS);
         }
         else
         {
             if (!MemDC)
                 return false;
 
-            SetDIBits(this->MemDC, this->MemBM, StartHeight, Height, Bits, &bi, DIB_RGB_COLORS);
+            SetDIBits(this->MemDC, this->MemBM, StartHeight, Height, Bits, &BI, DIB_RGB_COLORS);
         }
     }
 
@@ -1017,15 +1033,6 @@ class GdiPP
     {
         if (this->NeedsPixelsDrawn)
         {
-            static BITMAPINFO bi;
-            ZeroMemory(&bi, sizeof(bi));
-            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-            bi.bmiHeader.biWidth = this->ScreenSz.x;
-            bi.bmiHeader.biHeight = -this->ScreenSz.y;
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 24;
-            bi.bmiHeader.biCompression = BI_RGB;
-
             // copy bits if pixel == ClearColor dont copy
             // create final buffer then render
 
@@ -1050,7 +1057,7 @@ class GdiPP
     // ClearMode (in): Specifys how to clear dc
     // CearBrush (in, optional): Brush to clear with (only used with GDIPP_FILLRECT)
     // Note: It is the responsibility of the caller to free the brush 
-    void Clear(const DWORD ClearMode = GDIPP_FILLRECT, const HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH))
+    void Clear(const DWORD ClearMode = GDIPP_PIXELCLEAR, const HBRUSH ClearBrush = (HBRUSH)GetStockObject(BLACK_BRUSH))
     {
         LOGBRUSH lb;
 
@@ -1059,9 +1066,20 @@ class GdiPP
         else
             this->ErrorHandler("[GDIPP] Unable to get brush color");
 
-        ZeroMemory(PixelBuffer, this->ScreenSz.x * this->ScreenSz.y * 3);
+        ZeroMemory(PixelBuffer, this->Stride * ScreenSz.y);
 
-        if (ClearMode == GDIPP_FILLRECT)
+        if (ClearMode == GDIPP_PIXELCLEAR)
+        {
+            if (DoubleBuffered)
+            {
+                SetDIBitsToDevice(this->MemDC, 0, 0, this->ScreenSz.x, this->ScreenSz.y, 0, 0, 0, this->ScreenSz.y, PixelBuffer, &bi, DIB_RGB_COLORS);
+            }
+            else
+                SetDIBitsToDevice(this->ScreenDC, 0, 0, this->ScreenSz.x, this->ScreenSz.y, 0, 0, 0, this->ScreenSz.y, PixelBuffer, &bi, DIB_RGB_COLORS);
+            return;
+        }
+
+        else if (ClearMode == GDIPP_FILLRECT)
         {
             if (!ClearBrush)
                 return;
@@ -1070,15 +1088,19 @@ class GdiPP
                 FillRect(ScreenDC, &ClientRect, ClearBrush);
             else
                 FillRect(MemDC, &ClientRect, ClearBrush);
+
+            return;
         }
         else if (ClearMode == GDIPP_INVALIDATE)
         {
             InvalidateRect(Wnd, NULL, TRUE);
             UpdateWindow(Wnd);
+            return;
         }
         else if (ClearMode == GDIPP_REDRAW)
         {
             RedrawWindow(Wnd, NULL, NULL, RDW_ERASENOW | RDW_ERASE | RDW_INVALIDATE);
+            return;
         }
     }
 
@@ -1103,6 +1125,9 @@ class GdiPP
 
         PixelBuffer = new BYTE[this->Stride * ScreenSz.y];
         GdiBuffer = new BYTE[this->Stride * ScreenSz.y];
+
+        bi.bmiHeader.biWidth = this->ScreenSz.x;
+        bi.bmiHeader.biHeight = -this->ScreenSz.y;
 
         return Stat;
     }
