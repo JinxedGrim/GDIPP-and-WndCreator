@@ -147,6 +147,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GdiPP.hpp" />
+    <ClInclude Include="TerraGL.h" />
     <ClInclude Include="WndCreator.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

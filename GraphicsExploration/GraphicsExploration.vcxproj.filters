@@ -26,5 +26,8 @@
     <ClInclude Include="WndCreator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TerraGL.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
