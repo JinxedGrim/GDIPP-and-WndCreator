@@ -1,12 +1,16 @@
 #include <Windows.h>
 #include <d2d1.h>
 #include <wincodec.h>
+#include <dwrite.h>
 
 
 #ifdef _MSC_VER
-#pragma comment(lib, "d2d1")
+#pragma comment(lib, "d2d1") // -ld2d1
+#pragma comment(lib, "dwrite") // -ldwrite
 #pragma comment(lib, "windowscodecs")
 #endif
+
+#define CalcCenterAlignTextLayout(x, y, Width, Height) D2D1::RectF(x - Width, y - Height, x + Width, y + Height) 
 
 class TerraGL
 {
@@ -14,30 +18,38 @@ class TerraGL
 
     HWND Hwnd = NULL;
 
+    // Window info
     RECT ClientRect = {};
-    D2D1_SIZE_U ScreenSz = {};
+    D2D1_SIZE_U WndSz = {};
 
-    ID2D1Factory* D2D1Factory;
+    ID2D1Factory* D2D1Factory = nullptr;
 
-    ID2D1HwndRenderTarget* RenderTarget;
+    // Rendering stuff
+    ID2D1HwndRenderTarget* RenderTarget = nullptr;
+    ID2D1SolidColorBrush* Brush = nullptr;
     bool CurrentlyDrawing = false;
 
+    // PixelBuffer stuff
     D2D1_BITMAP_PROPERTIES BitmapProperties;
-    ID2D1Bitmap* Bitmap;
+    ID2D1Bitmap* Bitmap = nullptr;
     BYTE* PixelBuffer = nullptr;
     int Stride = 0;
     int PixelBufferWidth = 0;
     int PixelBufferHeight = 0;
 
+    // Dwrite
+    IDWriteFactory* DwriteFactory = nullptr;
+    IDWriteTextFormat* TextFormat = nullptr;
+
     bool UpdateClientRgn(bool UpdatePixelBuffer = false)
     {
         bool Stat = GetClientRect(this->Hwnd, &this->ClientRect);
 
-        this->ScreenSz = D2D1::SizeU(ClientRect.right - ClientRect.left, ClientRect.bottom - ClientRect.top);
+        this->WndSz = D2D1::SizeU(ClientRect.right - ClientRect.left, ClientRect.bottom - ClientRect.top);
 
         HRESULT Hr = S_OK;
 
-        Hr = D2D1Factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(this->Hwnd, this->ScreenSz), &RenderTarget);
+        Hr = D2D1Factory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(this->Hwnd, this->WndSz), &RenderTarget);
 
         if (UpdatePixelBuffer == true)
         {
@@ -71,9 +83,43 @@ class TerraGL
         this->CurrentlyDrawing = false;
 
         D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &D2D1Factory);
-        this->UpdateClientRgn(true);
+
+        if (this->D2D1Factory == nullptr)
+        {
+            return;
+        }
+
+        if (!this->UpdateClientRgn(true))
+        {
+            return;
+        }
 
         this->SetBitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_STRAIGHT));
+
+        HRESULT Hr = S_OK; 
+        Hr = this->RenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Red), &Brush);
+
+        if (!SUCCEEDED(Hr))
+        {
+            return;
+        }
+
+        Hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&this->DwriteFactory));
+
+        if (!SUCCEEDED(Hr))
+        {
+            return;
+        }
+
+        Hr = this->DwriteFactory->CreateTextFormat(L"Consolas", NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"en-us", &this->TextFormat);
+
+        if (!SUCCEEDED(Hr))
+        {
+            return;
+        }
+
+        TextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        TextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     }
 
     bool DrawPixelBuffer()
@@ -82,10 +128,27 @@ class TerraGL
 
         if (SUCCEEDED(Hr))
         {
-            Hr = this->RenderTarget->CreateBitmap(this->ScreenSz, (void*)this->PixelBuffer, (UINT32)this->Stride, this->BitmapProperties, &Bitmap);
+            if (this->Bitmap != nullptr)
+            {
+                this->Bitmap->Release();
+            }
+
+            Hr = this->RenderTarget->CreateBitmap(this->WndSz, (void*)this->PixelBuffer, (UINT32)this->Stride, this->BitmapProperties, &Bitmap);
         }
 
         return SUCCEEDED(Hr);
+    }
+
+    __inline void SetBrushColor(const D2D1::ColorF& Color)
+    {
+        if (this->Brush != nullptr)
+        {
+            this->Brush->SetColor(Color);
+        }
+        else
+        {
+            this->RenderTarget->CreateSolidColorBrush(Color, &this->Brush);
+        }
     }
 
     __inline void BeginDraw()
@@ -94,12 +157,12 @@ class TerraGL
         this->RenderTarget->BeginDraw();
     }
 
-    __inline void Clear()
+    __inline void Clear(const D2D1_COLOR_F* ClearColor = (const D2D1_COLOR_F*)0)
     {
         if (this->CurrentlyDrawing == false)
             this->BeginDraw();
 
-        const D2D1_COLOR_F* ClearColor = (const D2D1_COLOR_F*)0;
+        this->RenderTarget->Clear(ClearColor);
 
         if (this->CurrentlyDrawing == false)
             this->EndDraw();
@@ -113,6 +176,11 @@ class TerraGL
 
     ~TerraGL()
     {
+        if (this->Brush)
+        {
+            Brush->Release();
+        }
+
         if(this->Bitmap)
         {
             Bitmap->Release();
@@ -121,6 +189,16 @@ class TerraGL
         if(this->PixelBuffer)
         {
             delete[] PixelBuffer;
+        }
+
+        if (this->TextFormat)
+        {
+            this->TextFormat->Release();
+        }
+        
+        if (this->DwriteFactory)
+        {
+            this->DwriteFactory->Release();
         }
 
         if(this->RenderTarget)
